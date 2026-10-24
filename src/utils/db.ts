@@ -1,9 +1,9 @@
 import Database, { type Changes } from "bun:sqlite";
 import config from "./config";
-import { Order, Sort, Status } from "./types";
+import type { Order, Sort, Status } from "./types";
 import type { Item } from "./types";
 
-const db = new Database(config.DB_PATH, { safeIntegers: true });
+const db = new Database(config.DB_PATH);
 
 // Init the sqlite table
 db.run(
@@ -20,46 +20,44 @@ const addItm = db.prepare<Changes, [string, string]>(
 	"INSERT INTO items (title, description) VALUES (?, ?)",
 );
 
-const ById = db.prepare<Item, bigint>("SELECT * FROM items WHERE id = ?");
+const ById = db.prepare<Item, number>("SELECT * FROM items WHERE id = ?");
 
 const getItm = (sort: string, order: string) =>
 	db.prepare<Item, [string, number | null, number | null, number, number]>(
 		`SELECT * FROM items WHERE title LIKE ? AND ( ? IS NULL OR resolved = ? ) ORDER BY ${sort} ${order} LIMIT ? OFFSET ?`,
 	);
 
-const updateItm = db.prepare<Changes, [string, string, number, bigint]>(
+const updateItm = db.prepare<Changes, [string, string, number, number]>(
 	"UPDATE items SET title = ?, description = ?, resolved = ? WHERE id = ?",
 );
 
-const deleteItm = db.prepare<Changes, bigint>("DELETE FROM items WHERE id = ?");
+const deleteItm = db.prepare<Changes, number>("DELETE FROM items WHERE id = ?");
 
 class Items {
 	static add(title: string, descr: string): Changes {
 		return addItm.run(title, descr);
 	}
 
-	static getById(id: bigint): Item | null {
+	static getById(id: number): Item | null {
 		return ById.get(id);
 	}
 
 	static get(
-		p: number,
-		l: number,
-		title: string,
-		s: Sort,
-		o: Order,
-		stat: Status | null,
+		offset: number,
+		limit: number,
+		search: string,
+		sort: Sort,
+		order: Order,
+		stat: Status,
 	): Item[] {
-		const off = (p - 1) * l;
-		const ord = o.toUpperCase();
-		const queryTitle = title ? `%${title}%` : "%";
-		const resolved = stat === null ? null : stat === Status.RESOLVED ? 1 : 0;
-
-		return getItm(s, ord).all(queryTitle, resolved, resolved, l, off);
+		const q = `%${search}%`;
+		const o = order === "asc" ? "ASC" : "DESC";
+		const s = stat === null ? null : stat === "resolved" ? 1 : 0;
+		return getItm(sort, o).all(q, s, s, limit, offset);
 	}
 
 	static update(
-		id: bigint,
+		id: number,
 		title: string,
 		description: string,
 		resolved: boolean,
@@ -68,7 +66,9 @@ class Items {
 		return updateItm.run(title, description, r, id);
 	}
 
-	static delete(id: bigint): Changes {
+	static delete(id: number): Changes {
 		return deleteItm.run(id);
 	}
 }
+
+export { Items, db };
